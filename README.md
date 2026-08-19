@@ -1,49 +1,255 @@
 # IP Scanner Professional
 
-A Python-based network scanning toolkit with a professional terminal interface, live monitoring, configurable scan options, session history, and multi-format result exporting.
+A Python-based network analysis and scanning toolkit with a responsive terminal dashboard, configurable scanning engine, IP/port target support, session history, and multi-format reporting.
 
-Built with a modular architecture that separates the scanning engine, user interface, configuration, and application startup.
+The project uses a modular architecture that separates the scanner engine, terminal UI, configuration, reporting, and application bootstrap.
 
-> ⚠️ **Disclaimer:** This project is intended for authorized security testing, network administration, CTFs, labs, and educational purposes only. Do not scan systems or networks without permission.
+> ⚠️ **Disclaimer:** This software is intended only for authorized security testing, network administration, CTFs, laboratories, and educational environments. Do not scan systems or networks without explicit permission.
 
 ---
 
 ## ✨ Features
 
 * 🚀 Multi-threaded network scanning
-* 📊 Live terminal dashboard
-* 🔍 TCP scanning
-* 📡 UDP scanning
-* ⚙️ Configurable scan settings
+* 🎯 IPv4 and `IP:PORT` target support
+* 📊 Responsive live terminal dashboard
+* 🔍 TCP connectivity testing
+* 📡 UDP transmission testing
+* 🌐 Reverse DNS lookup
+* 🌍 GeoIP information
+* 🏢 ISP and ASN information
+* 📶 Packet-loss measurement
+* 📈 Ping, jitter, stability, and consistency analysis
+* 🏆 Quality and network scoring
+* 🥇 Real-time result ranking
 * 📋 Interactive terminal menu
-* 📂 Import targets from TXT files
+* 📥 TXT target import
 * 💾 Session history
 * 📤 JSON export
 * 📑 CSV export
 * 📝 TXT export
-* 🖥️ System information detection
-* 📝 Automatic logging
-* 🎨 Configurable terminal themes
+* 🌐 HTML report generation
+* 📝 Runtime logging
+* ⚙️ Configurable scanner settings
+* 🎨 Theme configuration support
 * 📦 PyInstaller executable build support
+* 🪟 Standalone Windows executable release
 
 ---
 
-## 🖥️ Interface
+## 🖥️ Dashboard
 
-The application provides an interactive terminal-based interface with:
+The terminal dashboard automatically adapts to the available terminal width.
 
-* Startup animation
-* Main navigation menu
-* Live scan monitoring
-* Scan statistics
-* Result screens
-* Export notifications
-* Configuration management
-* Session history
+### Large terminals
+
+Displays detailed scan information including:
+
+* Rank
+* Target
+* Country
+* Ping
+* Packet loss
+* Jitter
+* Stability
+* Grade
+* TCP latency
+* UDP latency
+* Provider
+* Status
+
+### Smaller terminals
+
+The interface automatically switches to a compact layout so the dashboard remains inside the visible terminal area instead of overflowing horizontally.
 
 ---
 
-## 📁 Project Structure
+## 🎯 Target Formats
+
+The scanner supports both plain IPv4 addresses and explicit port targets.
+
+### IP address
+
+```text
+1.1.1.1
+```
+
+When no port is specified, the scanner uses its default TCP/UDP test ports.
+
+### IP with port
+
+```text
+1.1.1.1:443
+8.8.8.8:53
+192.168.1.10:8080
+```
+
+When a port is specified, that port is used for the TCP/UDP tests.
+
+---
+
+## 📥 TXT Import
+
+Targets can be loaded from a text file.
+
+Example:
+
+```text
+1.1.1.1
+8.8.8.8
+1.1.1.1:443
+8.8.8.8:53
+192.168.1.10:8080
+```
+
+The importer:
+
+* Removes empty lines
+* Handles UTF-8 text files
+* Accepts `IP` and `IP:PORT`
+* Rejects invalid targets
+* Removes duplicates
+* Shows an import summary
+
+A Windows path containing spaces can also be provided:
+
+```text
+C:\Users\YourName\Desktop\targets.txt
+```
+
+---
+
+## 📊 Scan Analysis
+
+Each target can include information such as:
+
+* IP address
+* Port
+* Hostname
+* Country
+* City
+* ISP
+* ASN
+* Provider
+* Average ping
+* Minimum ping
+* Maximum ping
+* Packet loss
+* Jitter
+* Stability
+* Consistency
+* TCP latency
+* UDP latency
+* Quality score
+* Network score
+* Response speed
+* Network type
+* Grade
+* Status
+* Scan timestamp
+
+---
+
+## ⚙️ Configuration
+
+Application settings are stored in:
+
+```text
+config/settings.json
+```
+
+Example:
+
+```json
+{
+    "threads": 300,
+    "timeout": 1,
+    "ping_count": 3,
+    "theme": "default",
+    "auto_export": true,
+    "auto_save_logs": true,
+    "live_dashboard": true,
+    "udp_enabled": true,
+    "tcp_enabled": true,
+    "logging_enabled": true
+}
+```
+
+### Configuration Options
+
+| Option            | Description                               |
+| ----------------- | ----------------------------------------- |
+| `threads`         | Maximum number of concurrent scan workers |
+| `timeout`         | Network operation timeout in seconds      |
+| `ping_count`      | Number of ping requests per target        |
+| `theme`           | Selected terminal theme                   |
+| `auto_export`     | Automatically export completed scans      |
+| `auto_save_logs`  | Store scan session history                |
+| `live_dashboard`  | Enable the live terminal dashboard        |
+| `udp_enabled`     | Enable UDP testing                        |
+| `tcp_enabled`     | Enable TCP testing                        |
+| `logging_enabled` | Enable scanner error logging              |
+
+---
+
+## 📤 Export System
+
+Completed scan results can be exported to:
+
+```text
+JSON
+CSV
+TXT
+HTML
+```
+
+Example generated files:
+
+```text
+exports/
+├── scan_XXXXXXXXXX.json
+├── scan_XXXXXXXXXX.csv
+├── scan_XXXXXXXXXX.txt
+└── scan_XXXXXXXXXX.html
+```
+
+The generated HTML report is designed for viewing in a normal web browser.
+
+---
+
+## 🧾 Session History
+
+After a scan is completed, the application generates a summary containing information such as:
+
+* Total targets
+* Online targets
+* Offline targets
+* Failed scans
+* Average ping
+* Best target
+* Best score
+* Scan timestamp
+
+History is stored locally and can be viewed through the application's **Scan History** menu.
+
+---
+
+## 📝 Logging
+
+Runtime and scanner errors are logged locally.
+
+Typical runtime files include:
+
+```text
+logs/
+└── scanner.log
+```
+
+Generated logs, exports, and application data are intended to remain local and are excluded from version control.
+
+---
+
+## 🧩 Project Structure
 
 ```text
 IPScanner-Professional/
@@ -71,34 +277,76 @@ IPScanner-Professional/
     └── menu.py
 ```
 
-### Core
+### `main.py`
 
-The `core/` package contains the main scanning and processing components.
+Application controller responsible for:
 
-### UI
+* Startup
+* Scan execution
+* Dashboard management
+* Session saving
+* Result exporting
+* Runtime navigation
 
-The `ui/` package contains the terminal interface, dashboard, menus, and visualization components.
+### `launcher.py`
 
-### Config
+Application bootstrapper responsible for:
 
-The `config/` directory contains application configuration and theme resources.
+* Python version validation
+* Dependency checking
+* Runtime directory creation
+* Logging setup
+* Configuration creation and validation
+* System detection
+* Terminal initialization
 
----
+### `core/scanner.py`
 
-## ⚙️ Requirements
+Main scanning engine responsible for:
 
-* Python 3.10+
-* pip
+* Target parsing
+* IPv4 validation
+* IP/port handling
+* Ping analysis
+* TCP testing
+* UDP testing
+* Reverse DNS
+* GeoIP lookup
+* Network scoring
+* Ranking
+* JSON/CSV/TXT exports
 
-Python dependencies:
+### `core/port_scanner.py`
 
-```text
-rich
-requests
-colorama
-psutil
-pyinstaller
-```
+Provides reusable TCP port-scanning functionality for multiple ports.
+
+### `core/security.py`
+
+Provides validation and utility functions for targets, ports, filenames, and numeric configuration values.
+
+### `core/html_exporter.py`
+
+Generates browser-based HTML scan reports.
+
+### `ui/menu.py`
+
+Handles:
+
+* Main menu
+* Manual target input
+* TXT import
+* Settings
+* History
+* Export center
+* About page
+
+### `ui/dashboard.py`
+
+Provides the responsive live terminal interface and adapts its layout according to terminal size.
+
+### `ui/graphs.py`
+
+Provides terminal-oriented visualization components for scan metrics and summaries.
 
 ---
 
@@ -116,184 +364,90 @@ Enter the project directory:
 cd IPScanner-Professional
 ```
 
-Install the dependencies:
+Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ---
 
-## ▶️ Running
+## ▶️ Running from Source
 
-Start the application through the launcher:
+Start the application with:
 
 ```bash
 python launcher.py
 ```
 
-The launcher performs the initial application setup before starting the main program.
+Using `launcher.py` is recommended because it performs the application initialization before starting the main interface.
 
-It handles:
-
-1. Python version checking
-2. Dependency checking
-3. Directory creation
-4. Logging initialization
-5. Configuration creation
-6. System information detection
-7. Application startup
-
-You can also run the main application directly:
+The application can also be started directly with:
 
 ```bash
 python main.py
 ```
 
-Using `launcher.py` is recommended.
-
 ---
 
-## ⚙️ Configuration
+## 📦 Building the Executable
 
-Application settings are stored inside the `config/` directory.
+The repository includes a dedicated PyInstaller build script.
 
-The scanner supports configurable options such as:
-
-```json
-{
-    "threads": 300,
-    "timeout": 1,
-    "ping_count": 3,
-    "theme": "default",
-    "auto_export": true,
-    "auto_save_logs": true,
-    "live_dashboard": true,
-    "udp_enabled": true,
-    "tcp_enabled": true
-}
-```
-
-### Configuration Options
-
-| Option           | Description                       |
-| ---------------- | --------------------------------- |
-| `threads`        | Number of scanning threads        |
-| `timeout`        | Network operation timeout         |
-| `ping_count`     | Number of ping attempts           |
-| `theme`          | Terminal interface theme          |
-| `auto_export`    | Automatically export scan results |
-| `auto_save_logs` | Enable application logging        |
-| `live_dashboard` | Enable live monitoring            |
-| `udp_enabled`    | Enable UDP scanning               |
-| `tcp_enabled`    | Enable TCP scanning               |
-
----
-
-## 📥 Target Input
-
-Targets can be provided in two ways:
-
-### Manual Input
-
-Enter targets directly through the interactive menu.
-
-### TXT Import
-
-Import targets from a `.txt` file through the application's import option.
-
----
-
-## 📤 Export System
-
-Scan results can be exported in multiple formats:
-
-```text
-JSON
-CSV
-TXT
-```
-
-When automatic export is enabled, result files are generated after a scan is completed.
-
-Example:
-
-```text
-exports/
-├── scan_XXXXXXXXXX.json
-├── scan_XXXXXXXXXX.csv
-└── scan_XXXXXXXXXX.txt
-```
-
----
-
-## 🧾 Session History
-
-After a scan is completed, the application generates a summary and stores the session through the history system.
-
-This allows previous scan sessions to be reviewed from the application interface.
-
----
-
-## 🏗️ Building an Executable
-
-The project includes a PyInstaller build script.
-
-Install the dependencies:
+Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-Then run:
+Build the application:
 
 ```bash
 python build_exe.py
 ```
 
-The build process creates a standalone executable named:
-
-```text
-IPScannerProfessional
-```
-
-The generated files are normally placed in:
+The Windows executable is generated at:
 
 ```text
 dist/
+└── IPScannerProfessional.exe
 ```
+
+The build script packages the application as a standalone executable.
 
 ---
 
-## 📝 Logging
+## 🪟 Windows Release
 
-The launcher initializes application logging and stores runtime logs inside:
+Prebuilt Windows executables are available through the GitHub Releases page.
+
+Current release:
+
+**v5.1.0**
+
+The release includes:
 
 ```text
-logs/
+IPScannerProfessional.exe
 ```
-
-Generated logs and other runtime files should not be committed to the repository.
 
 ---
 
 ## 🔐 Responsible Use
 
-This tool performs network-related operations.
+This tool performs network-related operations and should only be used against systems you own or are explicitly authorized to test.
 
-Only use it against systems and networks where you have explicit authorization.
+Appropriate environments include:
 
-Recommended environments include:
-
-* Your own systems
-* Authorized infrastructure
-* CTF competitions
+* Your own infrastructure
+* Authorized internal networks
 * Security laboratories
 * Virtual machines
+* CTF environments
 * Educational environments
-* Internal network administration
+* Authorized penetration-testing engagements
 
-Unauthorized scanning may violate laws, policies, or terms of service.
+Unauthorized scanning may violate laws, organizational policies, or service terms.
 
 The author is not responsible for misuse of this software.
 
@@ -301,17 +455,18 @@ The author is not responsible for misuse of this software.
 
 ## 🛠️ Roadmap
 
-Potential future improvements:
+Planned or possible improvements include:
 
-* Improved scan visualization
-* More detailed result analysis
-* Additional export formats
-* Custom port configuration
+* Deeper port-scanning integration
+* Additional reporting formats
+* More advanced terminal visualizations
 * Scan profiles
+* Custom port ranges
 * Improved cross-platform support
-* Automated testing
-* CI/CD integration
-* Release automation
+* Automated tests
+* CI/CD
+* Automated release builds
+* Expanded HTML reporting
 
 ---
 
