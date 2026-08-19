@@ -2,37 +2,50 @@
 # FILE: core/scanner.py
 # ================================
 
-import os
-import re
 import csv
 import json
-import time
-import queue
-import socket
-import random
 import logging
 import platform
+import re
+import socket
 import statistics
 import subprocess
+import time
 
 from concurrent.futures import (
     ThreadPoolExecutor,
-    as_completed
+    as_completed,
 )
+from pathlib import Path
+
 
 class ScanResult:
 
-    def __init__(self, ip):
+    def __init__(self, ip, port=None):
 
         self.ip = ip
+        self.port = port
+
+        self.target = (
+            f"{ip}:{port}"
+            if port is not None
+            else ip
+        )
+
+        # --------------------------------------------------------
+        # Identification
+        # --------------------------------------------------------
 
         self.hostname = "-"
         self.country = "Unknown"
         self.city = "Unknown"
         self.isp = "Unknown"
         self.asn = "Unknown"
-
         self.provider = "Unknown"
+
+        # --------------------------------------------------------
+        # Ping
+        # --------------------------------------------------------
 
         self.pings = []
 
@@ -42,9 +55,17 @@ class ScanResult:
 
         self.packet_loss = 100
 
+        # --------------------------------------------------------
+        # Network quality
+        # --------------------------------------------------------
+
         self.jitter = 0
         self.stability = 0
         self.consistency = 0
+
+        # --------------------------------------------------------
+        # TCP / UDP
+        # --------------------------------------------------------
 
         self.tcp_latency = 9999
         self.udp_latency = 9999
@@ -52,14 +73,21 @@ class ScanResult:
         self.tcp_open = False
         self.udp_open = False
 
-        self.grade = "F"
+        # --------------------------------------------------------
+        # Classification
+        # --------------------------------------------------------
 
+        self.grade = "F"
         self.network_type = "Unknown"
 
         self.quality_score = 0
         self.network_score = 0
 
         self.response_speed = "Unknown"
+
+        # --------------------------------------------------------
+        # State
+        # --------------------------------------------------------
 
         self.status = "OFFLINE"
 
@@ -74,6 +102,8 @@ class ScanResult:
         return {
             "rank": self.rank,
             "ip": self.ip,
+            "port": self.port,
+            "target": self.target,
             "hostname": self.hostname,
             "country": self.country,
             "city": self.city,
@@ -97,48 +127,293 @@ class ScanResult:
             "network_score": self.network_score,
             "response_speed": self.response_speed,
             "status": self.status,
-            "scan_time": self.scan_time
+            "scan_time": self.scan_time,
         }
+
 
 class ProfessionalScanner:
 
     def __init__(self, config):
 
-        self.config = config
+        self.config = config or {}
 
         self.results = []
-
         self.best_result = None
 
         self.total_scanned = 0
-
         self.failed_scans = 0
 
-        self.max_threads = config["threads"]
+        # Used by the live dashboard to know exactly
+        # how many targets are expected.
+        self.expected_total = 0
 
-        self.timeout = config["timeout"]
+        self.max_threads = self._safe_int(
+            self.config.get("threads", 20),
+            20,
+            minimum=1,
+            maximum=500,
+        )
 
-        self.ping_count = config["ping_count"]
+        self.timeout = self._safe_float(
+            self.config.get("timeout", 2),
+            2,
+            minimum=0.2,
+            maximum=60,
+        )
+
+        self.ping_count = self._safe_int(
+            self.config.get("ping_count", 4),
+            4,
+            minimum=1,
+            maximum=20,
+        )
+
+        self.tcp_enabled = bool(
+            self.config.get(
+                "tcp_enabled",
+                True,
+            )
+        )
+
+        self.udp_enabled = bool(
+            self.config.get(
+                "udp_enabled",
+                True,
+            )
+        )
 
         self.system = platform.system().lower()
 
         self.stop_scan = False
 
+        self.log_enabled = bool(
+            self.config.get(
+                "logging_enabled",
+                True,
+            )
+        )
+
+        self._configure_logging()
+
+    # ============================================================
+    # BASIC HELPERS
+    # ============================================================
+
+    @staticmethod
+    def _safe_int(
+        value,
+        default,
+        minimum=None,
+        maximum=None,
+    ):
+
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = default
+
+        if minimum is not None:
+            value = max(
+                minimum,
+                value,
+            )
+
+        if maximum is not None:
+            value = min(
+                maximum,
+                value,
+            )
+
+        return value
+
+    @staticmethod
+    def _safe_float(
+        value,
+        default,
+        minimum=None,
+        maximum=None,
+    ):
+
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = default
+
+        if minimum is not None:
+            value = max(
+                minimum,
+                value,
+            )
+
+        if maximum is not None:
+            value = min(
+                maximum,
+                value,
+            )
+
+        return value
+
+    def _configure_logging(self):
+
+        if not self.log_enabled:
+            return
+
+        try:
+
+            logging.basicConfig(
+                filename="scanner.log",
+                level=logging.ERROR,
+                format=(
+                    "%(asctime)s | "
+                    "%(levelname)s | "
+                    "%(message)s"
+                ),
+            )
+
+        except Exception:
+            pass
+
+    # ============================================================
+    # TARGET PARSING
+    # ============================================================
+
+    def parse_target(self, target):
+
+        if target is None:
+            return None
+
+        target = str(target).strip()
+
+        if not target:
+            return None
+
+        target = target.strip(
+            "\"'[](),"
+        )
+
+        # --------------------------------------------------------
+        # IPv4:PORT
+        # --------------------------------------------------------
+
+        match = re.fullmatch(
+            r"^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$",
+            target,
+        )
+
+        if match:
+
+            ip = match.group(1)
+
+            try:
+                port = int(
+                    match.group(2)
+                )
+            except ValueError:
+                return None
+
+            if not self.validate_ip(ip):
+                return None
+
+            if not self.validate_port(port):
+                return None
+
+            return {
+                "ip": ip,
+                "port": port,
+                "target": f"{ip}:{port}",
+            }
+
+        # --------------------------------------------------------
+        # Plain IPv4
+        # --------------------------------------------------------
+
+        if self.validate_ip(target):
+
+            return {
+                "ip": target,
+                "port": None,
+                "target": target,
+            }
+
+        return None
+
     def validate_ip(self, ip):
 
-        pattern = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+        if not isinstance(ip, str):
+            return False
 
-        if not re.match(pattern, ip):
+        pattern = (
+            r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+        )
+
+        if not re.fullmatch(
+            pattern,
+            ip,
+        ):
             return False
 
         parts = ip.split(".")
 
+        if len(parts) != 4:
+            return False
+
         for part in parts:
 
-            if int(part) > 255:
+            try:
+                value = int(part)
+            except (TypeError, ValueError):
+                return False
+
+            if value < 0 or value > 255:
                 return False
 
         return True
+
+    def validate_port(self, port):
+
+        try:
+            port = int(port)
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return False
+
+        return 1 <= port <= 65535
+
+    def normalize_targets(self, targets):
+
+        clean_targets = []
+        seen = set()
+
+        if not targets:
+            return clean_targets
+
+        for raw_target in targets:
+
+            parsed = self.parse_target(
+                raw_target
+            )
+
+            if not parsed:
+                continue
+
+            key = (
+                parsed["ip"],
+                parsed["port"],
+            )
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            clean_targets.append(parsed)
+
+        return clean_targets
+
+    # ============================================================
+    # PING
+    # ============================================================
 
     def build_ping_command(self, ip):
 
@@ -149,8 +424,12 @@ class ProfessionalScanner:
                 "-n",
                 str(self.ping_count),
                 "-w",
-                str(self.timeout * 1000),
-                ip
+                str(
+                    int(
+                        self.timeout * 1000
+                    )
+                ),
+                ip,
             ]
 
         return [
@@ -158,52 +437,155 @@ class ProfessionalScanner:
             "-c",
             str(self.ping_count),
             "-W",
-            str(self.timeout),
-            ip
+            str(
+                max(
+                    1,
+                    int(self.timeout),
+                )
+            ),
+            ip,
         ]
 
     def extract_ping_values(self, output):
 
+        if not output:
+            return []
+
         values = []
 
-        matches = re.findall(
-            r"time[=<]?\s?(\d+)",
-            output.lower()
-        )
+        patterns = [
+            r"time[=<]\s*([\d.]+)\s*ms",
+            r"time[=<]\s*([\d.]+)",
+        ]
 
-        for match in matches:
+        for pattern in patterns:
 
-            try:
+            matches = re.findall(
+                pattern,
+                output.lower(),
+            )
 
-                values.append(int(match))
+            if not matches:
+                continue
 
-            except:
-                pass
+            for match in matches:
+
+                try:
+
+                    value = float(match)
+
+                    if value >= 0:
+                        values.append(value)
+
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    continue
+
+            if values:
+                break
 
         return values
 
     def extract_packet_loss(self, output):
 
+        if not output:
+            return 100
+
         output = output.lower()
 
-        patterns = [
-            r"(\d+)% packet loss",
-            r"(\d+)% loss",
-            r"lost = \d+ \((\d+)% loss\)"
-        ]
+        # Windows:
+        # Lost = 0 (0% loss)
 
-        for pattern in patterns:
+        windows_pattern = (
+            r"lost\s*=\s*\d+\s*"
+            r"\((\d+(?:\.\d+)?)%\s*loss\)"
+        )
 
-            match = re.search(pattern, output)
+        match = re.search(
+            windows_pattern,
+            output,
+        )
 
-            if match:
+        if match:
 
-                try:
-                    return int(match.group(1))
-                except:
-                    pass
+            try:
+
+                return int(
+                    float(
+                        match.group(1)
+                    )
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                pass
+
+        # Linux / macOS:
+        # 0% packet loss
+
+        unix_pattern = (
+            r"(\d+(?:\.\d+)?)%\s*"
+            r"(?:packet\s+loss|loss)"
+        )
+
+        match = re.search(
+            unix_pattern,
+            output,
+        )
+
+        if match:
+
+            try:
+
+                return int(
+                    float(
+                        match.group(1)
+                    )
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                pass
+
+        # Generic fallback
+
+        generic_pattern = (
+            r"(\d+(?:\.\d+)?)%\s*"
+            r"(?:packet\s+)?loss"
+        )
+
+        match = re.search(
+            generic_pattern,
+            output,
+        )
+
+        if match:
+
+            try:
+
+                return int(
+                    float(
+                        match.group(1)
+                    )
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                pass
 
         return 100
+
+    # ============================================================
+    # METRICS
+    # ============================================================
 
     def calculate_jitter(self, pings):
 
@@ -212,54 +594,104 @@ class ProfessionalScanner:
 
         diffs = []
 
-        for i in range(1, len(pings)):
+        for index in range(
+            1,
+            len(pings),
+        ):
 
             diffs.append(
-                abs(pings[i] - pings[i - 1])
+                abs(
+                    pings[index]
+                    - pings[index - 1]
+                )
             )
+
+        if not diffs:
+            return 0
 
         return round(
             sum(diffs) / len(diffs),
-            2
+            2,
         )
 
     def calculate_stability(self, pings):
 
-        if len(pings) < 2:
+        if not pings:
             return 0
 
-        deviation = statistics.stdev(pings)
+        if len(pings) == 1:
+            return 100
 
-        stability = max(
-            0,
-            100 - deviation
+        try:
+
+            deviation = statistics.stdev(
+                pings
+            )
+
+        except statistics.StatisticsError:
+
+            return 100
+
+        stability = 100 - (
+            deviation * 2
         )
 
-        return round(stability, 2)
+        return round(
+            max(
+                0,
+                min(
+                    100,
+                    stability,
+                ),
+            ),
+            2,
+        )
 
     def calculate_consistency(self, pings):
 
         if not pings:
             return 0
 
-        avg = sum(pings) / len(pings)
+        if len(pings) == 1:
+            return 100
 
-        stable_hits = 0
-
-        for ping in pings:
-
-            if abs(ping - avg) <= 10:
-                stable_hits += 1
-
-        return round(
-            (stable_hits / len(pings)) * 100,
-            2
+        average = (
+            sum(pings)
+            / len(pings)
         )
 
-    def determine_grade(self, avg_ping, loss):
+        tolerance = max(
+            5,
+            average * 0.10,
+        )
+
+        stable_hits = sum(
+            1
+            for ping in pings
+            if abs(
+                ping - average
+            ) <= tolerance
+        )
+
+        return round(
+            (
+                stable_hits
+                / len(pings)
+            ) * 100,
+            2,
+        )
+
+    def determine_grade(
+        self,
+        avg_ping,
+        loss,
+    ):
 
         if loss >= 100:
             return "F"
+
+        if loss >= 20:
+            return "D"
 
         if avg_ping <= 20:
             return "A+"
@@ -294,7 +726,10 @@ class ProfessionalScanner:
 
         return "VERY SLOW"
 
-    def detect_network_type(self, avg_ping):
+    def detect_network_type(
+        self,
+        avg_ping,
+    ):
 
         if avg_ping <= 15:
             return "FIBER"
@@ -314,70 +749,123 @@ class ProfessionalScanner:
         self,
         avg_ping,
         packet_loss,
-        stability
+        stability,
     ):
 
-        score = 100
+        score = 100.0
 
-        score -= avg_ping * 0.35
-
-        score -= packet_loss * 0.9
-
-        score += stability * 0.2
-
-        score = max(
-            0,
-            min(100, score)
+        score -= min(
+            50,
+            avg_ping * 0.35,
         )
 
-        return round(score, 2)
+        score -= (
+            packet_loss * 0.9
+        )
+
+        score += (
+            stability * 0.2
+        )
+
+        return round(
+            max(
+                0,
+                min(
+                    100,
+                    score,
+                ),
+            ),
+            2,
+        )
 
     def calculate_network_score(
         self,
-        result
+        result,
     ):
 
-        score = 0
+        score = 0.0
 
         score += max(
             0,
-            50 - result.avg_ping
+            50 - result.avg_ping,
         )
 
         score += max(
             0,
-            30 - result.packet_loss
+            30 - result.packet_loss,
         )
 
-        score += result.stability * 0.2
+        score += (
+            result.stability * 0.2
+        )
 
-        score += result.quality_score * 0.3
+        score += (
+            result.quality_score * 0.3
+        )
 
-        return round(score, 2)
+        if result.tcp_open:
+            score += 5
+
+        if result.udp_open:
+            score += 5
+
+        return round(
+            score,
+            2,
+        )
+
+    # ============================================================
+    # DNS / PROVIDER
+    # ============================================================
 
     def reverse_dns(self, ip):
 
         try:
 
-            return socket.gethostbyaddr(ip)[0]
+            hostname = socket.gethostbyaddr(
+                ip
+            )[0]
 
-        except:
+            if hostname:
+                return hostname
 
-            return "-"
+        except (
+            socket.herror,
+            socket.gaierror,
+            OSError,
+        ):
+            pass
+
+        except Exception:
+            pass
+
+        return "-"
 
     def detect_provider(self, hostname):
+
+        if not hostname:
+            return "Unknown"
 
         hostname = hostname.lower()
 
         providers = {
             "cloudflare": "Cloudflare",
             "akamai": "Akamai",
+            "amazonaws": "AWS",
             "amazon": "AWS",
             "google": "Google",
             "facebook": "Meta",
+            "meta": "Meta",
             "microsoft": "Azure",
+            "azure": "Azure",
             "fastly": "Fastly",
-            "cdn": "CDN"
+            "digitalocean": "DigitalOcean",
+            "oracle": "Oracle",
+            "ovh": "OVH",
+            "hetzner": "Hetzner",
+            "linode": "Linode",
+            "vultr": "Vultr",
+            "cdn": "CDN",
         }
 
         for key, value in providers.items():
@@ -387,67 +875,135 @@ class ProfessionalScanner:
 
         return "Unknown"
 
-    def tcp_test(self, ip, port=443):
+    # ============================================================
+    # TCP
+    # ============================================================
+
+    def tcp_test(
+        self,
+        ip,
+        port=443,
+    ):
 
         sock = socket.socket(
             socket.AF_INET,
-            socket.SOCK_STREAM
+            socket.SOCK_STREAM,
         )
 
-        sock.settimeout(self.timeout)
+        sock.settimeout(
+            self.timeout
+        )
 
-        start = time.time()
+        start = time.perf_counter()
 
         try:
 
-            result = sock.connect_ex((ip, port))
-
-            latency = round(
-                (time.time() - start) * 1000,
-                2
+            result = sock.connect_ex(
+                (
+                    ip,
+                    int(port),
+                )
             )
 
-            sock.close()
+            latency = round(
+                (
+                    time.perf_counter()
+                    - start
+                ) * 1000,
+                2,
+            )
 
             if result == 0:
-                return True, latency
 
-            return False, latency
+                return (
+                    True,
+                    latency,
+                )
 
-        except:
+            return (
+                False,
+                latency,
+            )
 
-            return False, 9999
+        except Exception:
 
-    def udp_test(self, ip, port=53):
+            return (
+                False,
+                9999,
+            )
+
+        finally:
+
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    # ============================================================
+    # UDP
+    # ============================================================
+
+    def udp_test(
+        self,
+        ip,
+        port=53,
+    ):
 
         sock = socket.socket(
             socket.AF_INET,
-            socket.SOCK_DGRAM
+            socket.SOCK_DGRAM,
         )
 
-        sock.settimeout(self.timeout)
+        sock.settimeout(
+            self.timeout
+        )
 
-        start = time.time()
+        start = time.perf_counter()
 
         try:
 
             sock.sendto(
-                b"test",
-                (ip, port)
+                b"",
+                (
+                    ip,
+                    int(port),
+                ),
             )
 
             latency = round(
-                (time.time() - start) * 1000,
-                2
+                (
+                    time.perf_counter()
+                    - start
+                ) * 1000,
+                2,
             )
 
-            sock.close()
+            # A successful UDP send does not prove
+            # that the remote UDP port is open.
+            # This value represents successful transmission.
 
-            return True, latency
+            return (
+                True,
+                latency,
+            )
 
-        except:
+        except Exception:
 
-            return False, 9999
+            return (
+                False,
+                9999,
+            )
+
+        finally:
+
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    # ============================================================
+    # GEO IP
+    # ============================================================
 
     def geo_lookup(self, ip):
 
@@ -457,95 +1013,235 @@ class ProfessionalScanner:
 
             response = requests.get(
                 f"http://ip-api.com/json/{ip}",
-                timeout=5
+                params={
+                    "fields": (
+                        "status,"
+                        "message,"
+                        "country,"
+                        "city,"
+                        "isp,"
+                        "as"
+                    )
+                },
+                timeout=5,
             )
 
+            if response.status_code != 200:
+                return self._empty_geo()
+
             data = response.json()
+
+            if data.get("status") != "success":
+                return self._empty_geo()
 
             return {
                 "country": data.get(
                     "country",
-                    "Unknown"
+                    "Unknown",
                 ),
                 "city": data.get(
                     "city",
-                    "Unknown"
+                    "Unknown",
                 ),
                 "isp": data.get(
                     "isp",
-                    "Unknown"
+                    "Unknown",
                 ),
                 "asn": data.get(
                     "as",
-                    "Unknown"
-                )
+                    "Unknown",
+                ),
             }
 
-        except:
+        except Exception:
 
-            return {
-                "country": "Unknown",
-                "city": "Unknown",
-                "isp": "Unknown",
-                "asn": "Unknown"
-            }
-# ================================
-# CONTINUE: core/scanner.py
-# ================================
+            return self._empty_geo()
 
-    def perform_scan(self, ip):
+    @staticmethod
+    def _empty_geo():
 
-        result = ScanResult(ip)
+        return {
+            "country": "Unknown",
+            "city": "Unknown",
+            "isp": "Unknown",
+            "asn": "Unknown",
+        }
+
+    # ============================================================
+    # SINGLE TARGET SCAN
+    # ============================================================
+
+    def perform_scan(
+        self,
+        target,
+    ):
+
+        if isinstance(
+            target,
+            dict,
+        ):
+
+            ip = target.get("ip")
+            port = target.get("port")
+
+            if not self.validate_ip(ip):
+                return None
+
+            if port is not None:
+
+                if not self.validate_port(
+                    port
+                ):
+                    return None
+
+                port = int(port)
+
+        else:
+
+            parsed = self.parse_target(
+                target
+            )
+
+            if not parsed:
+                return None
+
+            ip = parsed["ip"]
+            port = parsed["port"]
+
+        result = ScanResult(
+            ip,
+            port,
+        )
 
         try:
 
-            hostname = self.reverse_dns(ip)
+            # ----------------------------------------------------
+            # Reverse DNS
+            # ----------------------------------------------------
+
+            hostname = self.reverse_dns(
+                ip
+            )
 
             result.hostname = hostname
 
-            result.provider = self.detect_provider(
-                hostname
+            result.provider = (
+                self.detect_provider(
+                    hostname
+                )
             )
 
-            geo = self.geo_lookup(ip)
+            # ----------------------------------------------------
+            # GeoIP
+            # ----------------------------------------------------
 
-            result.country = geo["country"]
-            result.city = geo["city"]
-            result.isp = geo["isp"]
-            result.asn = geo["asn"]
+            geo = self.geo_lookup(
+                ip
+            )
 
-            command = self.build_ping_command(ip)
+            result.country = geo.get(
+                "country",
+                "Unknown",
+            )
+
+            result.city = geo.get(
+                "city",
+                "Unknown",
+            )
+
+            result.isp = geo.get(
+                "isp",
+                "Unknown",
+            )
+
+            result.asn = geo.get(
+                "asn",
+                "Unknown",
+            )
+
+            # ----------------------------------------------------
+            # Ping
+            # ----------------------------------------------------
+
+            command = (
+                self.build_ping_command(
+                    ip
+                )
+            )
+
+            process_timeout = (
+                (
+                    self.timeout
+                    * self.ping_count
+                )
+                + 5
+            )
+
+            creationflags = 0
+
+            if "windows" in self.system:
+
+                creationflags = getattr(
+                    subprocess,
+                    "CREATE_NO_WINDOW",
+                    0,
+                )
 
             process = subprocess.run(
                 command,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=process_timeout,
+                creationflags=creationflags,
             )
 
-            output = process.stdout
-
-            pings = self.extract_ping_values(
-                output
+            output = (
+                process.stdout
+                + "\n"
+                + process.stderr
             )
 
-            packet_loss = self.extract_packet_loss(
-                output
+            pings = (
+                self.extract_ping_values(
+                    output
+                )
+            )
+
+            packet_loss = (
+                self.extract_packet_loss(
+                    output
+                )
             )
 
             result.pings = pings
 
-            result.packet_loss = packet_loss
+            result.packet_loss = max(
+                0,
+                min(
+                    100,
+                    packet_loss,
+                ),
+            )
+
+            # ----------------------------------------------------
+            # Ping metrics
+            # ----------------------------------------------------
 
             if pings:
 
                 result.avg_ping = round(
-                    sum(pings) / len(pings),
-                    2
+                    sum(pings)
+                    / len(pings),
+                    2,
                 )
 
-                result.min_ping = min(pings)
+                result.min_ping = min(
+                    pings
+                )
 
-                result.max_ping = max(pings)
+                result.max_ping = max(
+                    pings
+                )
 
                 result.jitter = (
                     self.calculate_jitter(
@@ -568,7 +1264,7 @@ class ProfessionalScanner:
                 result.grade = (
                     self.determine_grade(
                         result.avg_ping,
-                        packet_loss
+                        result.packet_loss,
                     )
                 )
 
@@ -587,109 +1283,238 @@ class ProfessionalScanner:
                 result.quality_score = (
                     self.calculate_quality_score(
                         result.avg_ping,
-                        packet_loss,
-                        result.stability
-                    )
-                )
-
-                result.network_score = (
-                    self.calculate_network_score(
-                        result
+                        result.packet_loss,
+                        result.stability,
                     )
                 )
 
                 result.status = "ONLINE"
 
-            tcp_ok, tcp_latency = self.tcp_test(
-                ip
+            else:
+
+                result.avg_ping = 9999
+                result.min_ping = 9999
+                result.max_ping = 9999
+
+                result.grade = "F"
+                result.network_type = "Unknown"
+                result.response_speed = "Unknown"
+
+                result.quality_score = 0
+
+                result.status = "OFFLINE"
+
+            # ----------------------------------------------------
+            # TCP
+            # ----------------------------------------------------
+
+            if self.tcp_enabled:
+
+                tcp_port = (
+                    port
+                    if port is not None
+                    else 443
+                )
+
+                tcp_ok, tcp_latency = (
+                    self.tcp_test(
+                        ip,
+                        tcp_port,
+                    )
+                )
+
+                result.tcp_open = tcp_ok
+
+                result.tcp_latency = (
+                    tcp_latency
+                )
+
+            else:
+
+                result.tcp_open = False
+                result.tcp_latency = 0
+
+            # ----------------------------------------------------
+            # UDP
+            # ----------------------------------------------------
+
+            if self.udp_enabled:
+
+                udp_port = (
+                    port
+                    if port is not None
+                    else 53
+                )
+
+                udp_ok, udp_latency = (
+                    self.udp_test(
+                        ip,
+                        udp_port,
+                    )
+                )
+
+                result.udp_open = udp_ok
+
+                result.udp_latency = (
+                    udp_latency
+                )
+
+            else:
+
+                result.udp_open = False
+                result.udp_latency = 0
+
+            # ----------------------------------------------------
+            # Final score
+            # ----------------------------------------------------
+
+            result.network_score = (
+                self.calculate_network_score(
+                    result
+                )
             )
 
-            result.tcp_open = tcp_ok
+            return result
 
-            result.tcp_latency = tcp_latency
+        except subprocess.TimeoutExpired:
 
-            udp_ok, udp_latency = self.udp_test(
-                ip
+            result.status = "TIMEOUT"
+
+            result.quality_score = 0
+            result.network_score = 0
+
+            logging.error(
+                "Scan timeout: %s",
+                result.target,
             )
 
-            result.udp_open = udp_ok
-
-            result.udp_latency = udp_latency
+            return result
 
         except Exception as error:
 
-            logging.error(
-                f"Scan Error {ip}: {error}"
-            )
-
             result.status = "ERROR"
 
-        return result
+            result.quality_score = 0
+            result.network_score = 0
+
+            logging.error(
+                "Scan error %s: %s",
+                result.target,
+                error,
+            )
+
+            return result
+
+    # ============================================================
+    # SORTING / RANKING
+    # ============================================================
 
     def sort_results(self):
 
         self.results.sort(
-            key=lambda x: (
-                x.packet_loss,
-                x.avg_ping,
-                -x.stability,
-                -x.consistency,
-                -x.network_score,
-                -x.quality_score
+            key=lambda result: (
+                result.status != "ONLINE",
+                result.packet_loss,
+                result.avg_ping,
+                -result.stability,
+                -result.consistency,
+                -result.network_score,
+                -result.quality_score,
             )
         )
 
-        rank = 1
-
-        for result in self.results:
+        for rank, result in enumerate(
+            self.results,
+            start=1,
+        ):
 
             result.rank = rank
 
-            rank += 1
-
         if self.results:
 
-            self.best_result = self.results[0]
+            self.best_result = (
+                self.results[0]
+            )
+
+        else:
+
+            self.best_result = None
+
+    # ============================================================
+    # MULTI TARGET SCAN
+    # ============================================================
 
     def scan_ips(self, ips):
 
-        clean_ips = []
+        self.results = []
+        self.best_result = None
 
-        for ip in ips:
+        self.total_scanned = 0
+        self.failed_scans = 0
 
-            ip = ip.strip()
+        self.stop_scan = False
 
-            if self.validate_ip(ip):
+        targets = self.normalize_targets(
+            ips
+        )
 
-                if ip not in clean_ips:
+        # IMPORTANT:
+        # Dashboard uses this value to know
+        # exactly when scanning is finished.
 
-                    clean_ips.append(ip)
+        self.expected_total = len(
+            targets
+        )
+
+        if not targets:
+
+            return []
 
         with ThreadPoolExecutor(
-            max_workers=self.max_threads
+            max_workers=min(
+                self.max_threads,
+                len(targets),
+            )
         ) as executor:
 
             futures = {
-
                 executor.submit(
                     self.perform_scan,
-                    ip
-                ): ip
-
-                for ip in clean_ips
-
+                    target,
+                ): target
+                for target in targets
             }
 
-            for future in as_completed(futures):
+            for future in as_completed(
+                futures
+            ):
 
                 if self.stop_scan:
+
+                    for pending_future in futures:
+
+                        if not pending_future.done():
+                            pending_future.cancel()
+
                     break
+
+                target = futures[
+                    future
+                ]
 
                 try:
 
                     result = future.result()
 
-                    self.results.append(result)
+                    if result is None:
+
+                        self.failed_scans += 1
+
+                        continue
+
+                    self.results.append(
+                        result
+                    )
 
                     self.total_scanned += 1
 
@@ -697,11 +1522,25 @@ class ProfessionalScanner:
 
                 except Exception as error:
 
-                    logging.error(
-                        f"Future Error: {error}"
+                    self.failed_scans += 1
+
+                    target_name = (
+                        target.get(
+                            "target",
+                            str(target),
+                        )
+                        if isinstance(
+                            target,
+                            dict,
+                        )
+                        else str(target)
                     )
 
-                    self.failed_scans += 1
+                    logging.error(
+                        "Future error %s: %s",
+                        target_name,
+                        error,
+                    )
 
         self.sort_results()
 
@@ -711,7 +1550,21 @@ class ProfessionalScanner:
 
         self.stop_scan = True
 
-    def export_json(self, path):
+    # ============================================================
+    # EXPORT - JSON
+    # ============================================================
+
+    def export_json(
+        self,
+        path,
+    ):
+
+        path = Path(path)
+
+        path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
         data = [
             result.to_dict()
@@ -721,29 +1574,48 @@ class ProfessionalScanner:
         with open(
             path,
             "w",
-            encoding="utf-8"
+            encoding="utf-8",
         ) as file:
 
             json.dump(
                 data,
                 file,
-                indent=4
+                indent=4,
+                ensure_ascii=False,
             )
 
-    def export_csv(self, path):
+    # ============================================================
+    # EXPORT - CSV
+    # ============================================================
+
+    def export_csv(
+        self,
+        path,
+    ):
+
+        path = Path(path)
+
+        path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
         with open(
             path,
             "w",
             newline="",
-            encoding="utf-8"
+            encoding="utf-8",
         ) as file:
 
-            writer = csv.writer(file)
+            writer = csv.writer(
+                file
+            )
 
             writer.writerow([
                 "Rank",
                 "IP",
+                "Port",
+                "Target",
                 "Hostname",
                 "Country",
                 "City",
@@ -760,14 +1632,14 @@ class ProfessionalScanner:
                 "TCP Latency",
                 "UDP Latency",
                 "TCP Open",
-                "UDP Open",
+                "UDP Response",
                 "Grade",
                 "Network Type",
                 "Quality Score",
                 "Network Score",
                 "Speed",
                 "Status",
-                "Scan Time"
+                "Scan Time",
             ])
 
             for result in self.results:
@@ -776,6 +1648,8 @@ class ProfessionalScanner:
 
                     result.rank,
                     result.ip,
+                    result.port,
+                    result.target,
                     result.hostname,
                     result.country,
                     result.city,
@@ -799,28 +1673,54 @@ class ProfessionalScanner:
                     result.network_score,
                     result.response_speed,
                     result.status,
-                    result.scan_time
+                    result.scan_time,
 
                 ])
 
-    def export_txt(self, path):
+    # ============================================================
+    # EXPORT - TXT
+    # ============================================================
+
+    def export_txt(
+        self,
+        path,
+    ):
+
+        path = Path(path)
+
+        path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
         with open(
             path,
             "w",
-            encoding="utf-8"
+            encoding="utf-8",
         ) as file:
 
             for result in self.results:
 
-                file.write(f"""
+                port_value = (
+                    result.port
+                    if result.port is not None
+                    else "N/A"
+                )
 
+                file.write(
+                    f"""
 ====================================================
 RANK: {result.rank}
 ====================================================
 
+TARGET:
+{result.target}
+
 IP ADDRESS:
 {result.ip}
+
+PORT:
+{port_value}
 
 HOSTNAME:
 {result.hostname}
@@ -850,7 +1750,7 @@ PACKET LOSS:
 {result.packet_loss}%
 
 JITTER:
-{result.jitter}
+{result.jitter} ms
 
 STABILITY:
 {result.stability}
@@ -867,7 +1767,7 @@ UDP LATENCY:
 TCP OPEN:
 {result.tcp_open}
 
-UDP OPEN:
+UDP RESPONSE:
 {result.udp_open}
 
 GRADE:
@@ -893,49 +1793,78 @@ SCAN TIME:
 
 ====================================================
 
-""")
+"""
+                )
+
+    # ============================================================
+    # SUMMARY
+    # ============================================================
 
     def generate_summary(self):
 
         online = [
-            x for x in self.results
-            if x.status == "ONLINE"
+            result
+            for result in self.results
+            if result.status == "ONLINE"
         ]
 
         offline = [
-            x for x in self.results
-            if x.status != "ONLINE"
+            result
+            for result in self.results
+            if result.status != "ONLINE"
         ]
 
-        avg_ping = 0
+        average_ping = 0
 
         if online:
 
-            avg_ping = round(
+            valid_pings = [
+                result.avg_ping
+                for result in online
+                if result.avg_ping < 9999
+            ]
 
-                sum(
-                    x.avg_ping
-                    for x in online
-                ) / len(online),
+            if valid_pings:
 
-                2
-
-            )
+                average_ping = round(
+                    sum(valid_pings)
+                    / len(valid_pings),
+                    2,
+                )
 
         return {
 
-            "total": len(self.results),
+            "total": len(
+                self.results
+            ),
 
-            "online": len(online),
+            "online": len(
+                online
+            ),
 
-            "offline": len(offline),
+            "offline": len(
+                offline
+            ),
 
-            "average_ping": avg_ping,
+            "failed": self.failed_scans,
+
+            "average_ping": (
+                average_ping
+            ),
 
             "best_ip": (
-                self.best_result.ip
+                self.best_result.target
                 if self.best_result
                 else "N/A"
-            )
+            ),
 
-        }        
+            "best_score": (
+                self.best_result.network_score
+                if self.best_result
+                else 0
+            ),
+
+            "time": time.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+        }

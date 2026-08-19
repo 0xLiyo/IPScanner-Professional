@@ -2,39 +2,37 @@
 # FILE: main.py
 # ================================
 
-import os
-import time
 import threading
+import time
 from pathlib import Path
 
 from rich.console import Console
 
-from core.scanner import (
-    ProfessionalScanner
-)
+from core.scanner import ProfessionalScanner
+from ui.dashboard import DashboardUI
+from ui.menu import MenuSystem
 
-from ui.dashboard import (
-    DashboardUI
-)
-
-from ui.menu import (
-    MenuSystem
-)
 
 console = Console()
 
 BASE_DIR = Path(__file__).resolve().parent
 
 CONFIG_PATH = (
-    BASE_DIR /
-    "config" /
-    "settings.json"
+    BASE_DIR
+    / "config"
+    / "settings.json"
 )
 
 EXPORT_DIR = (
-    BASE_DIR /
-    "exports"
+    BASE_DIR
+    / "exports"
 )
+
+DATA_DIR = (
+    BASE_DIR
+    / "data"
+)
+
 
 class Application:
 
@@ -42,20 +40,50 @@ class Application:
 
         self.console = console
 
+        # --------------------------------------------------------
+        # Runtime directories
+        # --------------------------------------------------------
+
+        EXPORT_DIR.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        DATA_DIR.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        # --------------------------------------------------------
+        # UI
+        # --------------------------------------------------------
+
         self.dashboard = DashboardUI(
             self.console
         )
 
         self.menu = MenuSystem(
             self.console,
-            CONFIG_PATH
+            CONFIG_PATH,
         )
 
+        # --------------------------------------------------------
+        # Config
+        # --------------------------------------------------------
+
         self.config = self.menu.load_config()
+
+        # --------------------------------------------------------
+        # Scanner
+        # --------------------------------------------------------
 
         self.scanner = ProfessionalScanner(
             self.config
         )
+
+    # ============================================================
+    # EXPORT
+    # ============================================================
 
     def export_results(self):
 
@@ -64,158 +92,305 @@ class Application:
         )
 
         json_path = (
-            EXPORT_DIR /
-            f"scan_{timestamp}.json"
+            EXPORT_DIR
+            / f"scan_{timestamp}.json"
         )
 
         csv_path = (
-            EXPORT_DIR /
-            f"scan_{timestamp}.csv"
+            EXPORT_DIR
+            / f"scan_{timestamp}.csv"
         )
 
         txt_path = (
-            EXPORT_DIR /
-            f"scan_{timestamp}.txt"
+            EXPORT_DIR
+            / f"scan_{timestamp}.txt"
         )
 
-        self.scanner.export_json(
-            json_path
-        )
+        exported = []
 
-        self.scanner.export_csv(
-            csv_path
-        )
+        try:
 
-        self.scanner.export_txt(
-            txt_path
-        )
+            self.scanner.export_json(
+                json_path
+            )
+
+            exported.append(
+                json_path
+            )
+
+        except Exception as error:
+
+            self.console.print(
+                f"[bold red]"
+                f"JSON export failed:"
+                f"[/bold red] {error}"
+            )
+
+        try:
+
+            self.scanner.export_csv(
+                csv_path
+            )
+
+            exported.append(
+                csv_path
+            )
+
+        except Exception as error:
+
+            self.console.print(
+                f"[bold red]"
+                f"CSV export failed:"
+                f"[/bold red] {error}"
+            )
+
+        try:
+
+            self.scanner.export_txt(
+                txt_path
+            )
+
+            exported.append(
+                txt_path
+            )
+
+        except Exception as error:
+
+            self.console.print(
+                f"[bold red]"
+                f"TXT export failed:"
+                f"[/bold red] {error}"
+            )
 
         return [
-
-            str(json_path),
-            str(csv_path),
-            str(txt_path)
-
+            str(path)
+            for path in exported
         ]
+
+    # ============================================================
+    # SESSION
+    # ============================================================
 
     def save_session(self):
 
-        summary = self.scanner.generate_summary()
+        try:
 
-        summary["time"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+            summary = (
+                self.scanner.generate_summary()
+            )
 
-        self.menu.save_history(
-            summary
-        )
+            summary["time"] = time.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
 
-    def start_scan(self, ips):
+            if self.config.get(
+                "auto_save_logs",
+                True,
+            ):
+
+                self.menu.save_history(
+                    summary
+                )
+
+        except Exception as error:
+
+            self.console.print(
+                f"[bold red]"
+                f"Failed to save session:"
+                f"[/bold red] {error}"
+            )
+
+    # ============================================================
+    # START SCAN
+    # ============================================================
+
+    def start_scan(self, targets):
+
+        # --------------------------------------------------------
+        # Fresh scanner instance for every scan
+        # --------------------------------------------------------
 
         self.scanner = ProfessionalScanner(
             self.config
         )
+
         self.console.clear()
 
+        # --------------------------------------------------------
+        # Pre-scan screen
+        # --------------------------------------------------------
+
         self.console.print(
-
             """
+[bold bright_cyan]
+Please Wait...
+[/bold bright_cyan]
 
-        [bold bright_cyan]
-        Please Wait...
-        [/bold bright_cyan]
+[bold white]
+Initializing Professional Scan Engine
+[/bold white]
 
-        [bold white]
-        Initializing Professional Scan Engine
-        [/bold white]
-
-        [bright_black]
-        Analyzing Targets...
-        Preparing Threads...
-        Starting Network Modules...
-        [/bright_black]
-
-        """
-
+[bright_black]
+Analyzing Targets...
+Preparing Threads...
+Starting Network Modules...
+[/bright_black]
+"""
         )
 
-        time.sleep(2)
+        time.sleep(1.2)
 
         dashboard_thread = None
 
+        # --------------------------------------------------------
+        # Live Dashboard
+        # --------------------------------------------------------
+
         if self.config.get(
             "live_dashboard",
-            True
+            True,
         ):
 
             dashboard_thread = threading.Thread(
-
                 target=self.dashboard.live_monitor,
-
                 args=(self.scanner,),
-
-                daemon=True
-
+                daemon=True,
             )
 
             dashboard_thread.start()
 
-        self.scanner.scan_ips(ips)
+        # --------------------------------------------------------
+        # Scan
+        # --------------------------------------------------------
+
+        try:
+
+            self.scanner.scan_ips(
+                targets
+            )
+
+        except KeyboardInterrupt:
+
+            self.scanner.stop()
+
+            if dashboard_thread:
+
+                dashboard_thread.join(
+                    timeout=2
+                )
+
+            raise
+
+        except Exception as error:
+
+            self.scanner.stop()
+
+            self.console.print(
+                f"[bold red]"
+                f"Scan Error:"
+                f"[/bold red] {error}"
+            )
+
+        # --------------------------------------------------------
+        # Wait for dashboard thread
+        # --------------------------------------------------------
 
         if dashboard_thread:
 
             dashboard_thread.join(
-                timeout=1
+                timeout=3
             )
+
+        # --------------------------------------------------------
+        # Final result screen
+        # --------------------------------------------------------
 
         self.dashboard.final_screen(
             self.scanner
         )
 
+        # --------------------------------------------------------
+        # Save history
+        # --------------------------------------------------------
+
         self.save_session()
+
+        # --------------------------------------------------------
+        # Auto export
+        # --------------------------------------------------------
 
         if self.config.get(
             "auto_export",
-            True
+            True,
         ):
 
             paths = self.export_results()
 
-            self.dashboard.export_success(
-                paths
-            )
+            if paths:
+
+                self.dashboard.export_success(
+                    paths
+                )
+
+    # ============================================================
+    # MANUAL SCAN
+    # ============================================================
 
     def run_scan_from_input(self):
 
-        ips = self.menu.collect_ips()
+        targets = (
+            self.menu.collect_ips()
+        )
 
-        if not ips:
+        if not targets:
 
             self.dashboard.error_message(
-                "No IPs entered"
+                "No valid targets entered"
             )
+
+            time.sleep(1.5)
 
             return
 
-        self.start_scan(ips)
+        self.start_scan(
+            targets
+        )
 
-        input("\nPress ENTER...")
+        input(
+            "\nPress ENTER..."
+        )
+
+    # ============================================================
+    # TXT SCAN
+    # ============================================================
 
     def run_scan_from_txt(self):
 
-        ips = self.menu.import_txt()
+        targets = (
+            self.menu.import_txt()
+        )
 
-        if not ips:
+        if not targets:
 
             self.dashboard.error_message(
-                "No valid IPs found"
+                "No valid targets found"
             )
+
+            time.sleep(1.5)
 
             return
 
-        self.start_scan(ips)
+        self.start_scan(
+            targets
+        )
 
-        input("\nPress ENTER...")
+        input(
+            "\nPress ENTER..."
+        )
+
+    # ============================================================
+    # STARTUP
+    # ============================================================
 
     def startup(self):
 
@@ -227,6 +402,10 @@ class Application:
 
         self.dashboard.startup_animation()
 
+    # ============================================================
+    # MAIN LOOP
+    # ============================================================
+
     def runtime_loop(self):
 
         while True:
@@ -235,13 +414,25 @@ class Application:
 
             choice = self.menu.main_menu()
 
+            # ----------------------------------------------------
+            # Scan
+            # ----------------------------------------------------
+
             if choice == "1":
 
                 self.run_scan_from_input()
 
+            # ----------------------------------------------------
+            # TXT Import
+            # ----------------------------------------------------
+
             elif choice == "2":
 
                 self.run_scan_from_txt()
+
+            # ----------------------------------------------------
+            # Settings
+            # ----------------------------------------------------
 
             elif choice == "3":
 
@@ -251,17 +442,33 @@ class Application:
                     self.menu.load_config()
                 )
 
+            # ----------------------------------------------------
+            # History
+            # ----------------------------------------------------
+
             elif choice == "4":
 
                 self.menu.show_history()
+
+            # ----------------------------------------------------
+            # Export Center
+            # ----------------------------------------------------
 
             elif choice == "5":
 
                 self.menu.export_center()
 
+            # ----------------------------------------------------
+            # About
+            # ----------------------------------------------------
+
             elif choice == "6":
 
                 self.menu.about_page()
+
+            # ----------------------------------------------------
+            # Exit
+            # ----------------------------------------------------
 
             elif choice == "7":
 
@@ -273,6 +480,10 @@ class Application:
 
                 break
 
+            # ----------------------------------------------------
+            # Safety fallback
+            # ----------------------------------------------------
+
             else:
 
                 self.dashboard.error_message(
@@ -281,22 +492,37 @@ class Application:
 
                 time.sleep(1)
 
+    # ============================================================
+    # RUN
+    # ============================================================
+
+    def run(self):
+
+        self.startup()
+
+        self.runtime_loop()
+
+
+# ================================================================
+# ENTRY POINT
+# ================================================================
+
 def main():
 
     app = Application()
 
     try:
 
-        app.startup()
-
-        app.runtime_loop()
+        app.run()
 
     except KeyboardInterrupt:
 
         console.clear()
 
         console.print(
-            "\n[bold red]Interrupted[/bold red]"
+            "\n[bold red]"
+            "Interrupted"
+            "[/bold red]"
         )
 
     except Exception as error:
@@ -304,8 +530,12 @@ def main():
         console.clear()
 
         console.print(
-            f"\n[bold red]Fatal Error:[/bold red] {error}"
+            "\n[bold red]"
+            "Fatal Error:"
+            "[/bold red] "
+            f"{error}"
         )
+
 
 if __name__ == "__main__":
 
