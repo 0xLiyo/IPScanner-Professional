@@ -1,0 +1,16 @@
+
+---
+
+# FILE: .gitignore
+
+```gitignore id="a4v7ks"
+__pycache__/
+*.pyc
+exports/
+logs/
+data/history.json
+config/settings.json
+.env
+dist/
+build/
+*.spec

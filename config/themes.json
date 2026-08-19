@@ -1,0 +1,20 @@
+{
+    "default": {
+        "primary": "bright_cyan",
+        "secondary": "bright_magenta",
+        "success": "green",
+        "danger": "red"
+    },
+    "matrix": {
+        "primary": "green",
+        "secondary": "bright_green",
+        "success": "green",
+        "danger": "red"
+    },
+    "fire": {
+        "primary": "bright_red",
+        "secondary": "yellow",
+        "success": "green",
+        "danger": "red"
+    }
+}
