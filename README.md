@@ -1,8 +1,8 @@
 # IP Scanner Professional
 
-A Python-based network analysis and scanning toolkit with a responsive terminal dashboard, configurable scanning engine, IP/port target support, session history, and multi-format reporting.
+A Python-based network analysis and scanning toolkit with a responsive terminal dashboard, configurable scanning engine, IPv4/IP:PORT target support, session history, and multi-format reporting.
 
-The project uses a modular architecture that separates the scanner engine, terminal UI, configuration, reporting, and application bootstrap.
+The project uses a modular architecture that separates the scanning engine, terminal UI, configuration, reporting utilities, and application bootstrap.
 
 > ⚠️ **Disclaimer:** This software is intended only for authorized security testing, network administration, CTFs, laboratories, and educational environments. Do not scan systems or networks without explicit permission.
 
@@ -28,22 +28,22 @@ The project uses a modular architecture that separates the scanner engine, termi
 * 📤 JSON export
 * 📑 CSV export
 * 📝 TXT export
-* 🌐 HTML report generation
+* 🌐 HTML reporting utilities
 * 📝 Runtime logging
 * ⚙️ Configurable scanner settings
 * 🎨 Theme configuration support
-* 📦 PyInstaller executable build support
-* 🪟 Standalone Windows executable release
+* 📦 PyInstaller build support
+* 🪟 Prebuilt Windows executable
 
 ---
 
-## 🖥️ Dashboard
+## 🖥️ Responsive Dashboard
 
-The terminal dashboard automatically adapts to the available terminal width.
+The terminal dashboard adapts to the available terminal size.
 
 ### Large terminals
 
-Displays detailed scan information including:
+The detailed dashboard can display:
 
 * Rank
 * Target
@@ -60,13 +60,13 @@ Displays detailed scan information including:
 
 ### Smaller terminals
 
-The interface automatically switches to a compact layout so the dashboard remains inside the visible terminal area instead of overflowing horizontally.
+The dashboard automatically switches to a compact layout so the interface remains within the visible terminal area and avoids horizontal overflow.
 
 ---
 
 ## 🎯 Target Formats
 
-The scanner supports both plain IPv4 addresses and explicit port targets.
+The scanner accepts both plain IPv4 addresses and explicit port targets.
 
 ### IP address
 
@@ -84,13 +84,13 @@ When no port is specified, the scanner uses its default TCP/UDP test ports.
 192.168.1.10:8080
 ```
 
-When a port is specified, that port is used for the TCP/UDP tests.
+When a port is specified, that port is used for the corresponding TCP/UDP tests.
 
 ---
 
 ## 📥 TXT Import
 
-Targets can be loaded from a text file.
+Targets can be imported from a `.txt` file.
 
 Example:
 
@@ -105,13 +105,13 @@ Example:
 The importer:
 
 * Removes empty lines
-* Handles UTF-8 text files
+* Supports UTF-8 text files
 * Accepts `IP` and `IP:PORT`
 * Rejects invalid targets
 * Removes duplicates
-* Shows an import summary
+* Displays an import summary
 
-A Windows path containing spaces can also be provided:
+Windows paths containing spaces are supported:
 
 ```text
 C:\Users\YourName\Desktop\targets.txt
@@ -121,7 +121,7 @@ C:\Users\YourName\Desktop\targets.txt
 
 ## 📊 Scan Analysis
 
-Each target can include information such as:
+Each scan result can contain:
 
 * IP address
 * Port
@@ -192,15 +192,136 @@ Example:
 
 ---
 
-## 📤 Export System
+# 🐧 Ubuntu / Linux Installation
 
-Completed scan results can be exported to:
+## Requirements
+
+* Python 3.10+
+* Git
+* `pip`
+* `venv`
+* System `ping` utility
+
+On Ubuntu, install the required system packages:
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-pip python3-venv iputils-ping
+```
+
+## Clone the Repository
+
+```bash
+git clone https://github.com/0xLiyo/IPScanner-Professional.git
+cd IPScanner-Professional
+```
+
+## Create a Virtual Environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+## Install Python Dependencies
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+## Run the Application
+
+```bash
+python launcher.py
+```
+
+`launcher.py` is the recommended entry point because it performs application initialization, configuration setup, directory creation, logging setup, and dependency checks before starting the interface.
+
+The application can also be started directly with:
+
+```bash
+python main.py
+```
+
+---
+
+# 🪟 Windows Installation
+
+## Run from Source
+
+Install Python 3.10 or newer, then clone the repository:
+
+```powershell
+git clone https://github.com/0xLiyo/IPScanner-Professional.git
+cd IPScanner-Professional
+```
+
+Install dependencies:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+Run:
+
+```powershell
+python launcher.py
+```
+
+## Prebuilt Windows Executable
+
+A standalone Windows executable is available through GitHub Releases.
+
+Current release:
+
+**v5.1.0**
+
+Download:
+
+```text
+IPScannerProfessional.exe
+```
+
+The executable does not require a separate Python installation.
+
+---
+
+# 📦 Building the Executable
+
+PyInstaller is included in `requirements.txt` because it is required for building the standalone executable.
+
+Install dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Build:
+
+```bash
+python build_exe.py
+```
+
+On Windows, the resulting executable is generated at:
+
+```text
+dist/
+└── IPScannerProfessional.exe
+```
+
+The build script creates a standalone console executable and packages the project's configuration resources.
+
+---
+
+# 📤 Export System
+
+Scan results can be exported to:
 
 ```text
 JSON
 CSV
 TXT
-HTML
 ```
 
 Example generated files:
@@ -209,17 +330,22 @@ Example generated files:
 exports/
 ├── scan_XXXXXXXXXX.json
 ├── scan_XXXXXXXXXX.csv
-├── scan_XXXXXXXXXX.txt
-└── scan_XXXXXXXXXX.html
+└── scan_XXXXXXXXXX.txt
 ```
 
-The generated HTML report is designed for viewing in a normal web browser.
+The project also contains an HTML reporting utility under:
+
+```text
+core/html_exporter.py
+```
+
+which can be used for browser-based reporting integrations.
 
 ---
 
-## 🧾 Session History
+# 🧾 Session History
 
-After a scan is completed, the application generates a summary containing information such as:
+After a scan is completed, the application generates a session summary containing information such as:
 
 * Total targets
 * Online targets
@@ -230,11 +356,11 @@ After a scan is completed, the application generates a summary containing inform
 * Best score
 * Scan timestamp
 
-History is stored locally and can be viewed through the application's **Scan History** menu.
+History is stored locally and can be reviewed through the **Scan History** menu.
 
 ---
 
-## 📝 Logging
+# 📝 Logging
 
 Runtime and scanner errors are logged locally.
 
@@ -249,7 +375,7 @@ Generated logs, exports, and application data are intended to remain local and a
 
 ---
 
-## 🧩 Project Structure
+# 🧩 Project Structure
 
 ```text
 IPScanner-Professional/
@@ -318,15 +444,21 @@ Main scanning engine responsible for:
 
 ### `core/port_scanner.py`
 
-Provides reusable TCP port-scanning functionality for multiple ports.
+Reusable TCP port-scanning utilities for multiple ports.
 
 ### `core/security.py`
 
-Provides validation and utility functions for targets, ports, filenames, and numeric configuration values.
+Validation and utility helpers for:
+
+* IPv4 targets
+* Ports
+* Target parsing
+* Filenames
+* Numeric configuration values
 
 ### `core/html_exporter.py`
 
-Generates browser-based HTML scan reports.
+HTML report generation utilities.
 
 ### `ui/menu.py`
 
@@ -342,100 +474,19 @@ Handles:
 
 ### `ui/dashboard.py`
 
-Provides the responsive live terminal interface and adapts its layout according to terminal size.
+Provides the responsive live terminal dashboard and automatically adapts the layout to the terminal size.
 
 ### `ui/graphs.py`
 
-Provides terminal-oriented visualization components for scan metrics and summaries.
+Provides terminal-oriented visualization helpers for scan metrics and summary information.
 
 ---
 
-## 🚀 Installation
+# 🔐 Responsible Use
 
-Clone the repository:
+This tool performs network-related operations.
 
-```bash
-git clone https://github.com/0xLiyo/IPScanner-Professional.git
-```
-
-Enter the project directory:
-
-```bash
-cd IPScanner-Professional
-```
-
-Install dependencies:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
----
-
-## ▶️ Running from Source
-
-Start the application with:
-
-```bash
-python launcher.py
-```
-
-Using `launcher.py` is recommended because it performs the application initialization before starting the main interface.
-
-The application can also be started directly with:
-
-```bash
-python main.py
-```
-
----
-
-## 📦 Building the Executable
-
-The repository includes a dedicated PyInstaller build script.
-
-Install dependencies:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-Build the application:
-
-```bash
-python build_exe.py
-```
-
-The Windows executable is generated at:
-
-```text
-dist/
-└── IPScannerProfessional.exe
-```
-
-The build script packages the application as a standalone executable.
-
----
-
-## 🪟 Windows Release
-
-Prebuilt Windows executables are available through the GitHub Releases page.
-
-Current release:
-
-**v5.1.0**
-
-The release includes:
-
-```text
-IPScannerProfessional.exe
-```
-
----
-
-## 🔐 Responsible Use
-
-This tool performs network-related operations and should only be used against systems you own or are explicitly authorized to test.
+Only use it against systems and networks you own or are explicitly authorized to test.
 
 Appropriate environments include:
 
@@ -453,11 +504,11 @@ The author is not responsible for misuse of this software.
 
 ---
 
-## 🛠️ Roadmap
+# 🛠️ Roadmap
 
-Planned or possible improvements include:
+Possible future improvements include:
 
-* Deeper port-scanning integration
+* Deeper integration of the reusable port scanner
 * Additional reporting formats
 * More advanced terminal visualizations
 * Scan profiles
@@ -467,10 +518,11 @@ Planned or possible improvements include:
 * CI/CD
 * Automated release builds
 * Expanded HTML reporting
+* More advanced scan result filtering
 
 ---
 
-## 📄 License
+# 📄 License
 
 This project is licensed under the MIT License.
 
@@ -478,7 +530,7 @@ See [`LICENSE`](LICENSE) for details.
 
 ---
 
-## ⭐ Support
+# ⭐ Support
 
 If you find the project useful, consider giving the repository a ⭐ on GitHub.
 
